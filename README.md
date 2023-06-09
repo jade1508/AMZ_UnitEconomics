@@ -13,5 +13,5 @@ Any product should have these low margins only if discontinued, have excess inve
 When payout % is too low outside the above mentioned exceptions:
  * Check pricing and identify opportunity to increase price
  * If price cannot be increased due to competition / BSR, etc. then check we need to investigate FBA fee % and COGS % and check if any of them could be decreased with new packaging option or new sourcing option 
- * -> long term strategy
+   -> long term strategy
  * If any of the above are possible BM to identify if this ASIN needs to be sunsetted
