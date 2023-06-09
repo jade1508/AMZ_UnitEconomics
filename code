@@ -1,0 +1,92 @@
+create or replace table `datalake.AMZ_UnitEconomics`
+partition by date_trunc(date, month)
+cluster by business, brand
+as
+
+with periods as (
+  SELECT distinct country, vat_rate,
+    EXTRACT(ISOYEAR FROM period) AS isoyear
+  , EXTRACT(ISOWEEK FROM period) AS isoweek
+  FROM (SELECT country, vat_rate, MIN(CAST(date_from AS DATE)) as min_date, 
+             MAX(CAST(case when date_to>current_date() then current_date else date_to end AS DATE)) as max_date
+      FROM `datalake.vat_rates`
+      group by country, vat_rate) t JOIN
+    UNNEST(GENERATE_DATE_ARRAY(t.min_date, t.max_date)) period
+)
+
+, cogs as (
+    SELECT
+      isoweek,
+      isoyear,
+      marketplace,
+      sku,
+      cogs
+    FROM
+      `datalake.fact_cogs`
+  )
+
+, fee as (
+  select *,
+    EXTRACT(YEAR FROM date) isoyear,
+    EXTRACT(WEEK FROM date) isoweek
+  FROM `datalake.fact_AMZ_FeePreviewReport`
+  )
+
+, submain as (
+  select
+    date,
+    business,
+    brand,
+    marketplaceName,
+    fee.sku,
+    asin,
+    replace(product_name,'""','') AS product_name,
+    your_price,
+    sales_price,
+    product_size,
+    fee.currency,
+    sales_price_usd,
+    fba_fulfillment_usd,
+    snl_fee_usd,
+    commission_usd,
+    vat_rate + 1 as vat_rate,
+    cogs.cogs,
+  FROM fee
+  LEFT join `datalake.amazonmarketplaces_mapping` map
+  ON
+    fee.marketplaceName = map.country
+  LEFT JOIN periods
+  ON
+    fee.marketplaceName = periods.country
+    and fee.isoyear = periods.isoyear
+    and fee.isoweek = periods.isoweek
+  LEFT join cogs
+  ON
+    fee.sku = cogs.sku
+    and lower(map.marketplace) = cogs.marketplace
+    and fee.isoyear = cogs.isoyear
+    and fee.isoweek = cogs.isoweek
+  where 1=1
+  and fee.currency= map.currency
+  )
+
+select  
+  date,
+  brand,
+  business,
+  marketplaceName,
+  sku,
+  asin,
+  product_size,
+  currency,
+  ROUND(SAFE_DIVIDE(sales_price_usd, vat_rate),2) as salesprice_exclVAT,
+  fba_fulfillment_usd,
+  snl_fee_usd,
+  commission_usd,
+  cogs,
+  round(ROUND(SAFE_DIVIDE(sales_price_usd, vat_rate),2) - fba_fulfillment_usd - snl_fee_usd - commission_usd - cogs, 2) AS payout,
+  round(safe_divide(fba_fulfillment_usd + snl_fee_usd, ROUND(SAFE_DIVIDE(sales_price_usd, vat_rate),2)), 3) AS fulfillment_on_sales,
+  round(safe_divide(commission_usd, ROUND(SAFE_DIVIDE(sales_price_usd, vat_rate),2)), 3) AS commission_on_sales,
+  round(safe_divide(cogs, ROUND(SAFE_DIVIDE(sales_price_usd, vat_rate),2)), 3) AS cogs_on_sales,
+  round(safe_divide(ROUND(SAFE_DIVIDE(sales_price_usd, vat_rate),2) - fba_fulfillment_usd - snl_fee_usd - commission_usd - cogs, ROUND(SAFE_DIVIDE(sales_price_usd, vat_rate),2)), 3) AS payout_on_sales
+from submain
