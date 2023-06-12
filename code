@@ -49,7 +49,7 @@ with periods as (
     fba_fulfillment_usd,
     snl_fee_usd,
     commission_usd,
-    vat_rate + 1 as vat_rate,
+    SAFE_ADD(vat_rate, 1) as vat_rate,
     cogs.cogs,
   FROM fee
   LEFT join `datalake.amazonmarketplaces_mapping` map
